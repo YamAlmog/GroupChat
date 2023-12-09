@@ -17,8 +17,7 @@ lock = threading.Lock()
 users_tuple_list =[]
 threads_list = []
 # -----------------handle_client func------------------------------------------
-def handle_client(current_client, current_client_name: str):
-
+def handle_client(current_client: socket, current_client_name: str):
     global users_tuple_list
     while True:
         try:
