@@ -25,6 +25,8 @@ def handle_client(current_client: socket, current_client_name: str):
         except socket.error as e:
             raise OSError(f"Error with receiving data:{e}")
         logging.info(f"{current_client_name} sent: {message}")
+
+        lock.acquire()
         for client_tuple in users_tuple_list:
             client = client_tuple[0]
 
@@ -37,6 +39,7 @@ def handle_client(current_client: socket, current_client_name: str):
                         raise OSError(f"Error with sending data:{e}")
                     logging.info(sentence)      
                     current_client.close()
+
                     users_tuple_list = [tup for tup in users_tuple_list if tup[0] != current_client]
                     
                 else:    
@@ -44,7 +47,7 @@ def handle_client(current_client: socket, current_client_name: str):
                         client.send(f"{current_client_name}: {message}".encode('utf-8'))                     
                     except socket.error as e:
                         raise OSError(f"Error with sending data:{e}")
-  
+        lock.release()
 
 
 def create_users_threads(server):
