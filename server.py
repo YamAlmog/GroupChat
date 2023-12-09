@@ -1,6 +1,7 @@
 import socket
 import logging
 import threading
+import sys
 
 HEADER=1024
 PORT= 8020
@@ -10,77 +11,102 @@ END_CHAT = 'exit'
 server=socket.socket()
 server.bind(BIND)
 
-logging.basicConfig(filename='app.log', filemode='w',  level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(stream=sys.stdout, filemode='w',  level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 lock = threading.Lock()
-
+users_tuple_list =[]
+threads_list = []
 # -----------------handle_client func------------------------------------------
-def handle_client(server, current_client, other_client, current_client_name):
-    try:
-        while True:
+def handle_client(current_client, current_client_name: str):
+
+    global users_tuple_list
+    while True:
+        try:
             message = current_client.recv(HEADER).decode('utf-8')
-            other_client.send(message.encode('utf-8'))
+        except socket.error as e:
+            raise OSError(f"Error with receiving data:{e}")
+        logging.info(f"{current_client_name} sent: {message}")
+        for client_tuple in users_tuple_list:
+            client = client_tuple[0]
 
-            logging.info(f"{current_client_name} sent: {message}")
+            if client != current_client:     
+                if message.lower() == END_CHAT:
+                    sentence = f"{current_client_name} left the chat"
+                    try:
+                        client.send(sentence.encode('utf-8'))
+                    except socket.error as e:
+                        raise OSError(f"Error with sending data:{e}")
+                    logging.info(sentence)      
+                    current_client.close()
+                    users_tuple_list = [tup for tup in users_tuple_list if tup[0] != current_client]
+                    
+                else:    
+                    try:    
+                        client.send(f"{current_client_name}: {message}".encode('utf-8'))                     
+                    except socket.error as e:
+                        raise OSError(f"Error with sending data:{e}")
+  
 
-            if message.lower() == END_CHAT:
-                logging.info('The conversation is over.')
-                break
-            else:
-                continue
-    except OSError as ex:
-        raise OSError(f"Socket error: {ex}")
-    finally:
-        current_client.close()
-        other_client.close()
-        server.close() 
 
+def create_users_threads(server):
+    
+    global users_tuple_list
+    global threads_list
+    while True:
+        try:    
+            (user_socket, address) = server.accept()
+        except socket.error as e:
+                raise OSError(f"Connection error: {e}")
+        logging.info(f"User connected")
+        server_msg = "Entre name:"
+        try:    
+            user_socket.send(server_msg.encode('utf-8'))
+        except socket.error as e:
+            raise OSError(f"Error with sending data:{e}")
+        try:
+            user_name = user_socket.recv(HEADER).decode('utf-8')
+        except socket.error as e:
+            raise OSError(f"Error with receiving data:{e}")
+        if user_name == '':
+            continue
+        logging.info(f"User name: {user_name}")
+        user_tuple = (user_socket, user_name)
+        users_tuple_list.append(user_tuple)
 
-
+        user_handler_thread = threading.Thread(target=handle_client, args=(user_socket, user_name))
+        logging.info('this is thread')
+        user_handler_thread.start()
+        threads_list.append(user_handler_thread)
+    
 
 # -------------------------------------------- Start func --------------------------------------------
 def start(server):
     try:   
-        (user_1, address_1) = server.accept()
-        logging.info("User 1 connected")
-        (user_2, address_2) = server.accept()
-        logging.info("User 2 connected")
-
-        server_msg = "Entre name:"
-        user_1.send(f'{server_msg}'.encode('utf-8'))
-        user_2.send(f'{server_msg}'.encode('utf-8'))
-
-        name_1 = user_1.recv(HEADER).decode('utf-8')
-        logging.info(f"User 1 name: {name_1}")
-
-        name_2 = user_2.recv(HEADER).decode('utf-8')
-        logging.info(f"User 2 name: {name_2}")
-
-        user_1.send(name_2.encode('utf-8'))
-        user_2.send(name_1.encode('utf-8'))
-
-        user1_handler_thread = threading.Thread(target=handle_client, args=(server, user_1, user_2, name_1))
-        user2_handler_thread = threading.Thread(target=handle_client, args=(server, user_2, user_1, name_2))
-
-        user1_handler_thread.start()
-        user2_handler_thread.start()
-
-        user1_handler_thread.join()  
-        user2_handler_thread.join()
+        global users_tuple_list
+        global threads_list
+        
+        user_creator_thread = threading.Thread(target=create_users_threads, args=(server,))
+        user_creator_thread.start()
+        user_creator_thread.join()
+        logging.debug(users_tuple_list)
+        for thread in threads_list:       
+            thread.join()
         
     except OSError as ex:
         raise OSError(f"Socket error: {ex}")
+    except Exception as ex:
+        raise Exception(f"Unknown error: {ex}")
 
 
 def main():
     try:    
         server.listen()
-        logging.info(f"Server is listening on...")
-        start(server)
+        logging.debug(f"Server is listening on...")
+        start(server)  
     except OSError as ex:
-        print(f"Error: {ex}")
-
-
+        print(ex)
+    except Exception as ex:
+        print(ex)
 
 if __name__ == "__main__":
     main()
